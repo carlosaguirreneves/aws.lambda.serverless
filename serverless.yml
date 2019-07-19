@@ -1,0 +1,115 @@
+service: flightprices
+package:
+  exclude:
+    - package.json
+    - package-lock.json
+
+custom:
+  stage: ${opt:stage, self:provider.stage}
+  isProd:
+    dev: false
+    hom: false
+    prod: true
+  stagePath:
+    dev: service_dev
+    hom: service_hom
+    prod: service
+  nameBucket:
+    dev: dev-flightprices
+    hom: hom-flightprices
+    prod: flightprices
+  customDomain:
+    domainName: api.flightprices.com
+    basePath: ${self:custom.stagePath.${self:custom.stage}}
+    stage: ${self:custom.stage}
+    createRoute53Record: false  
+  dummyEndpoints:
+    dev:
+      sendAllAlertasDePrecos:
+        method: get
+        path: alertas-precos/sendall
+        integration: lambda-proxy
+        cors: true
+    hom:
+      sendAllAlertasDePrecos:
+        method: get
+        path: alertas-precos/sendall
+        integration: lambda-proxy
+        cors: true
+    prod:
+      sendAllAlertasDePrecos:
+        method: get
+        path: alertas-precos/sendall
+        integration: mock
+        request:
+          template:
+            application/json: '{ "statusCode": 200}'
+        response:
+            headers:
+              Content-Type: "'text/html'"
+            statusCodes:
+                200:
+                    pattern: ''
+
+provider:
+  name: aws
+  runtime: nodejs8.10
+  stage: dev
+  region: us-east-1
+  timeout: 30
+  logRetentionInDays: 3
+  role: 
+  versionFunctions: ${self:custom.isProd.${self:custom.stage}}
+  deploymentBucket:
+    name: lambda-deploy
+  environment:
+    stage: ${opt:stage, self:custom.stage}
+    prefixArn: 
+    flightPriceApi: 
+    mailchimpApi: https://us18.api.mailchimp.com/
+    mailchimpApiKey: 
+    sendInBlueApiKey: 
+    noreply: 
+
+functions:
+  sendAllAlertasDePrecos:
+    handler: schedule-alerta-precos.sendAllAlertasDePrecos
+    memorySize: 128
+    events:
+      - http: ${self:custom.dummyEndpoints.${self:custom.stage}.sendAllAlertasDePrecos}
+      - schedule:
+          name: ${self:custom.stage}-send-all-alertas-de-precos
+          rate: cron(0/15 16-20 * * ? *)
+          enabled: ${self:custom.isProd.${self:custom.stage}}
+          input:
+            body:
+              env: ${self:custom.stage}
+  insertAlertaDePrecos:
+    handler: insert-alerta-precos.insertAlertaDePrecos
+    memorySize: 128
+    events:
+      - http:
+          path: alerta-precos/insert
+          method: post
+          cors: true
+  addSubscribe:
+    handler: sendinblue-subscribe.addSubscribe
+    memorySize: 128
+    events:
+      - http:
+          path: sendinblue/subscribe
+          method: post
+          cors: true
+  sendAlertaDePrecos:
+    handler: send-alerta-precos.sendAlertaDePrecos
+    memorySize: 128
+  snsBouncesEmail:
+    handler: sns-bounces-email.snsBouncesEmail
+    memorySize: 128
+  snsComplaintsEmail:
+    handler: sns-complaints-email.snsComplaintsEmail
+    memorySize: 128
+    
+plugins:
+  - serverless-offline
+  - serverless-domain-manager
